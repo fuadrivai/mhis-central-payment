@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'mandiri_h2h' => [
+        'base_url' => env('API_URL'),
+        'api_key' => env('API_KEY'),
+        'partner_service_id' => env('MANDIRI_PARTNER_SERVICE_ID', '85765'),
+        'connect_timeout' => (int) env('MANDIRI_H2H_CONNECT_TIMEOUT', 3),
+        'timeout' => (int) env('MANDIRI_H2H_TIMEOUT', 15),
+    ],
+
 ];
