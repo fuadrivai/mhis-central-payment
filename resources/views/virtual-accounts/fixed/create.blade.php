@@ -21,6 +21,24 @@
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
+                            <label for="bank_id" class="form-label">Bank</label>
+                            <select id="bank_id" name="bank_id"
+                                class="form-select @error('bank_id') is-invalid @enderror" required>
+                                @if ($banks->count() !== 1)
+                                    <option value="">Pilih bank</option>
+                                @endif
+                                @foreach ($banks as $bank)
+                                    <option value="{{ $bank->id }}" @selected((string) old('bank_id', $banks->count() === 1 ? $bank->id : null) === (string) $bank->id)>
+                                        {{ $bank->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('bank_id')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
                             <label for="branch_id" class="form-label">Cabang</label>
                             <select id="branch_id" name="branch_id"
                                 class="form-select @error('branch_id') is-invalid @enderror" required>

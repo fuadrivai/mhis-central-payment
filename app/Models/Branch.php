@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'va_fixed_prefix',
     'va_dynamic_prefix',
     'api_key',
+    'webhook_url',
     'is_active',
 ])]
 #[Hidden(['api_key'])]
@@ -62,6 +63,14 @@ class Branch extends Model
     public function paymentTransactions(): HasMany
     {
         return $this->hasMany(PaymentTransaction::class);
+    }
+
+    /**
+     * @return HasMany<BranchWebhookDelivery, $this>
+     */
+    public function webhookDeliveries(): HasMany
+    {
+        return $this->hasMany(BranchWebhookDelivery::class);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Bank;
 use App\Models\Branch;
 use App\Models\User;
 use App\Models\VirtualAccount;
@@ -61,6 +62,7 @@ class BranchManagementTest extends TestCase
             ->assertOk()
             ->assertSee('Edit Cabang')
             ->assertSee($branch->name)
+            ->assertSee('Webhook URL')
             ->assertSee('API Key Cabang')
             ->assertSee($branch->api_key)
             ->assertSee('readonly', false)
@@ -76,6 +78,7 @@ class BranchManagementTest extends TestCase
             'code' => 'SMG',
             'va_fixed_prefix' => '85765030',
             'va_dynamic_prefix' => '85765993',
+            'webhook_url' => 'https://sekolah.example.com/webhooks/payment',
             'is_active' => '1',
         ]);
 
@@ -86,6 +89,7 @@ class BranchManagementTest extends TestCase
         $this->get(route('settings.branches.index'))->assertSee($branch->api_key);
         $this->assertSame(64, strlen((string) $branch->api_key));
         $this->assertTrue($branch->is_active);
+        $this->assertSame('https://sekolah.example.com/webhooks/payment', $branch->webhook_url);
     }
 
     public function test_branch_prefixes_must_contain_only_digits(): void
@@ -133,6 +137,7 @@ class BranchManagementTest extends TestCase
             'code' => $branch->code,
             'va_fixed_prefix' => $branch->va_fixed_prefix,
             'va_dynamic_prefix' => $branch->va_dynamic_prefix,
+            'webhook_url' => 'https://bintaro.example.com/payment-callback',
             'is_active' => '0',
         ]);
 
@@ -141,7 +146,28 @@ class BranchManagementTest extends TestCase
             'id' => $branch->id,
             'name' => 'Bintaro Utama',
             'is_active' => false,
+            'webhook_url' => 'https://bintaro.example.com/payment-callback',
         ]);
+    }
+
+    public function test_webhook_url_must_be_an_http_or_https_url(): void
+    {
+        $user = $this->createSuperAdmin();
+
+        $this->actingAs($user)
+            ->from(route('settings.branches.create'))
+            ->post(route('settings.branches.store'), [
+                'name' => 'Semarang',
+                'code' => 'SMG',
+                'va_fixed_prefix' => '85765030',
+                'va_dynamic_prefix' => '85765993',
+                'webhook_url' => 'javascript:alert(1)',
+                'is_active' => '1',
+            ])
+            ->assertRedirect(route('settings.branches.create'))
+            ->assertSessionHasErrors('webhook_url');
+
+        $this->assertDatabaseMissing('branches', ['code' => 'SMG']);
     }
 
     public function test_branch_prefix_cannot_be_changed_after_virtual_accounts_exist(): void
@@ -150,6 +176,7 @@ class BranchManagementTest extends TestCase
         $branch = $this->createBranch();
         VirtualAccount::query()->create([
             'branch_id' => $branch->id,
+            'bank_id' => Bank::query()->where('code', 'mandiri')->value('id'),
             'va_type' => 'dynamic',
             'partner_service_id' => '85765',
             'customer_no' => '85765991000000001',

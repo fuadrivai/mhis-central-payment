@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Bank;
 use App\Models\Branch;
 use App\Models\Student;
 use App\Models\User;
@@ -85,13 +86,13 @@ class FixedVirtualAccountTest extends TestCase
         $this->assertDatabaseHas('students', [
             'branch_id' => $branch->id,
             'nis' => '01234567',
-            'fixed_va_number' => '8576501001234567',
             'parent_email' => 'wali.budi@example.com',
             'additional_email' => null,
             'status' => 'active',
         ]);
         $this->assertDatabaseHas('virtual_accounts', [
             'branch_id' => $branch->id,
+            'bank_id' => $this->mandiri()->id,
             'virtual_account_no' => '8576501001234567',
             'va_type' => 'fixed',
             'current_amount' => '0.00',
@@ -408,11 +409,11 @@ class FixedVirtualAccountTest extends TestCase
             'nis' => '01234567',
             'name' => 'Budi Santoso',
             'parent_email' => 'wali.budi@example.com',
-            'fixed_va_number' => '8576501001234567',
             'status' => 'active',
         ]);
         VirtualAccount::query()->create([
             'branch_id' => $branch->id,
+            'bank_id' => $this->mandiri()->id,
             'student_id' => $student->id,
             'va_type' => 'fixed',
             'partner_service_id' => '85765',
@@ -430,6 +431,11 @@ class FixedVirtualAccountTest extends TestCase
         $response->assertSee('Budi Santoso');
         $response->assertSee('8576501001234567');
         $response->assertSee('30 Jun 2027 23:59');
+    }
+
+    private function mandiri(): Bank
+    {
+        return Bank::query()->where('code', 'mandiri')->firstOrFail();
     }
 
     private function createSuperAdmin(): User

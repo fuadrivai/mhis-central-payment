@@ -6,13 +6,16 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'branch_id',
+    'bank_id',
     'invoice_id',
     'virtual_account_id',
     'paid_amount',
     'payment_reference_no',
+    'payment_request_id',
     'channel',
     'paid_at',
     'raw_payload',
@@ -42,6 +45,14 @@ class PaymentTransaction extends Model
     }
 
     /**
+     * @return BelongsTo<Bank, $this>
+     */
+    public function bank(): BelongsTo
+    {
+        return $this->belongsTo(Bank::class);
+    }
+
+    /**
      * @return BelongsTo<Invoice, $this>
      */
     public function invoice(): BelongsTo
@@ -55,5 +66,13 @@ class PaymentTransaction extends Model
     public function virtualAccount(): BelongsTo
     {
         return $this->belongsTo(VirtualAccount::class);
+    }
+
+    /**
+     * @return HasOne<BranchWebhookDelivery, $this>
+     */
+    public function webhookDelivery(): HasOne
+    {
+        return $this->hasOne(BranchWebhookDelivery::class);
     }
 }

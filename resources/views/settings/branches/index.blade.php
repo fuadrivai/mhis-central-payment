@@ -34,6 +34,7 @@
                         <th>Prefix Fixed VA</th>
                         <th>Prefix Dynamic VA</th>
                         <th>API Key</th>
+                        <th>Webhook</th>
                         <th>Data Terkait</th>
                         <th>Status</th>
                         <th class="text-end">Aksi</th>
@@ -54,6 +55,13 @@
                                     <div class="small text-muted">Nilai disembunyikan</div>
                                 @else
                                     <span class="badge bg-label-warning">Belum dibuat</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if ($branch->webhook_url)
+                                    <span class="badge bg-label-success">Terkonfigurasi</span>
+                                @else
+                                    <span class="badge bg-label-secondary">Belum diatur</span>
                                 @endif
                             </td>
                             <td class="text-nowrap">
@@ -83,7 +91,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center py-5">
+                            <td colspan="9" class="text-center py-5">
                                 <i class="bx bx-buildings fs-1 text-muted d-block mb-2"></i>
                                 <p class="text-muted mb-3">Belum ada data cabang.</p>
                                 <a href="{{ route('settings.branches.create') }}" class="btn btn-primary btn-sm">Tambah Cabang</a>

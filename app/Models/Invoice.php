@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'bill_name',
     'customer_name',
     'customer_phone',
+    'email',
     'amount',
     'fee_amount',
     'total_amount',
@@ -43,6 +44,18 @@ class Invoice extends Model
             'expired_at' => 'datetime',
             'paid_at' => 'datetime',
         ];
+    }
+
+    /**
+     * A pending invoice whose expiry has passed is shown as expired.
+     */
+    public function displayStatus(): string
+    {
+        if ($this->status === 'pending' && $this->expired_at?->isPast()) {
+            return 'expired';
+        }
+
+        return $this->status;
     }
 
     /**

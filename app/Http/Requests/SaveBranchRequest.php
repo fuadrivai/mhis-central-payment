@@ -26,6 +26,7 @@ class SaveBranchRequest extends FormRequest
             'code' => ['required', 'string', 'max:20', 'alpha_dash', Rule::unique('branches', 'code')->ignore($branchId)],
             'va_fixed_prefix' => ['required', 'string', 'regex:/^[0-9]{8}$/', Rule::unique('branches', 'va_fixed_prefix')->ignore($branchId)],
             'va_dynamic_prefix' => ['required', 'string', 'max:20', 'regex:/^[0-9]+$/', Rule::unique('branches', 'va_dynamic_prefix')->ignore($branchId)],
+            'webhook_url' => ['nullable', 'string', 'url:http,https', 'max:2048'],
             'is_active' => ['required', 'boolean'],
         ];
     }

@@ -8,6 +8,10 @@ use RuntimeException;
 
 class MandiriH2hClient
 {
+    public const CREATE_VA_ENDPOINT = '/api/internal/va/create';
+
+    public const UPDATE_VA_ENDPOINT = '/api/internal/va/update';
+
     public function isConfigured(): bool
     {
         return filled(config('services.mandiri_h2h.base_url'))
@@ -24,6 +28,26 @@ class MandiriH2hClient
             throw new RuntimeException('Konfigurasi koneksi Mandiri H2H belum lengkap.');
         }
 
+        return $this->sendVirtualAccountRequest(self::CREATE_VA_ENDPOINT, $payload, 'POST');
+    }
+
+    /**
+     * @param  array<string, string>  $payload
+     */
+    public function updateVirtualAccount(array $payload): Response
+    {
+        if (! $this->isConfigured()) {
+            throw new RuntimeException('Konfigurasi koneksi Mandiri H2H belum lengkap.');
+        }
+
+        return $this->sendVirtualAccountRequest(self::UPDATE_VA_ENDPOINT, $payload, 'PUT');
+    }
+
+    /**
+     * @param  array<string, string>  $payload
+     */
+    private function sendVirtualAccountRequest(string $endpoint, array $payload, string $method): Response
+    {
         $baseUrl = rtrim((string) config('services.mandiri_h2h.base_url'), '/');
 
         return Http::acceptJson()
@@ -33,6 +57,6 @@ class MandiriH2hClient
             ])
             ->connectTimeout((int) config('services.mandiri_h2h.connect_timeout', 3))
             ->timeout((int) config('services.mandiri_h2h.timeout', 15))
-            ->post($baseUrl.'/api/internal/va/create', $payload);
+            ->send($method, $baseUrl.$endpoint, ['json' => $payload]);
     }
 }

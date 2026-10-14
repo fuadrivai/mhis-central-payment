@@ -18,7 +18,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'parent_email',
     'additional_email',
     'parent_phone',
-    'fixed_va_number',
     'status',
 ])]
 class Student extends Model

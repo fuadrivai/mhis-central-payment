@@ -17,6 +17,7 @@
                 <thead>
                     <tr>
                         <th>Nomor VA</th>
+                        <th>Bank</th>
                         <th>Siswa</th>
                         <th>NIS</th>
                         <th>Cabang</th>
@@ -29,6 +30,7 @@
                     @forelse ($virtualAccounts as $virtualAccount)
                         <tr>
                             <td><code class="user-select-all">{{ $virtualAccount->virtual_account_no }}</code></td>
+                            <td>{{ $virtualAccount->bank?->name ?? '-' }}</td>
                             <td>
                                 <span class="fw-semibold">{{ $virtualAccount->student?->name ?? $virtualAccount->virtual_account_name }}</span>
                                 @if ($virtualAccount->student?->grade_class)
@@ -65,7 +67,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5">
+                            <td colspan="8" class="text-center py-5">
                                 <i class="bx bx-credit-card fs-1 text-muted d-block mb-2"></i>
                                 <p class="text-muted mb-3">Belum ada Fixed VA.</p>
                                 <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary btn-sm">

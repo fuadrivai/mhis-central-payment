@@ -26,11 +26,10 @@
         <li class="menu-header small text-uppercase">
             <span class="menu-header-text">Payment &amp; Billing</span>
         </li>
-        <li class="menu-item">
-            <a href="javascript:void(0);" class="menu-link" title="Fitur Tagihan">
+        <li class="menu-item {{ request()->routeIs('invoices.*') ? 'active' : '' }}">
+            <a href="{{ route('invoices.index') }}" class="menu-link" title="Tagihan dan hasil transaksi">
                 <i class="menu-icon tf-icons bx bx-receipt"></i>
                 <div data-i18n="Invoices">Invoices</div>
-                <div class="badge bg-label-primary fs-tiny rounded-pill ms-auto">Soon</div>
             </a>
         </li>
         <li class="menu-item {{ request()->routeIs('virtual-accounts.*') ? 'active open' : '' }}">
@@ -44,26 +43,23 @@
                         <div data-i18n="Fixed Virtual Accounts">Fixed Virtual Accounts</div>
                     </a>
                 </li>
-                <li class="menu-item">
-                    <a href="javascript:void(0);" class="menu-link">
+                <li class="menu-item {{ request()->routeIs('virtual-accounts.dynamic.*') ? 'active' : '' }}">
+                    <a href="{{ route('virtual-accounts.dynamic.index') }}" class="menu-link">
                         <div data-i18n="Dynamic Virtual Accounts">Dynamic Virtual Accounts</div>
-                        <div class="badge bg-label-secondary fs-tiny rounded-pill ms-auto">Soon</div>
                     </a>
                 </li>
             </ul>
         </li>
-        <li class="menu-item">
-            <a href="javascript:void(0);" class="menu-link" title="Monitoring Transaksi Pembayaran">
+        <li class="menu-item {{ request()->routeIs('payment-transactions.*') ? 'active' : '' }}">
+            <a href="{{ route('payment-transactions.index') }}" class="menu-link" title="Monitoring Transaksi Pembayaran">
                 <i class="menu-icon tf-icons bx bx-transfer-alt"></i>
                 <div data-i18n="Transactions">Transactions</div>
-                <div class="badge bg-label-secondary fs-tiny rounded-pill ms-auto">Soon</div>
             </a>
         </li>
-        <li class="menu-item">
-            <a href="javascript:void(0);" class="menu-link" title="Rekonsiliasi Bank Mandiri">
+        <li class="menu-item {{ request()->routeIs('reconciliations.*') ? 'active' : '' }}">
+            <a href="{{ route('reconciliations.index') }}" class="menu-link" title="Rekonsiliasi laporan bank">
                 <i class="menu-icon tf-icons bx bx-check-double"></i>
                 <div data-i18n="Reconciliation">Reconciliation</div>
-                <div class="badge bg-label-secondary fs-tiny rounded-pill ms-auto">Soon</div>
             </a>
         </li>
 
@@ -90,7 +86,7 @@
                 <div class="badge bg-label-secondary fs-tiny rounded-pill ms-auto">Soon</div>
             </a>
         </li>
-        <li class="menu-item {{ request()->routeIs('settings.branches.*') ? 'active open' : '' }}">
+        <li class="menu-item {{ request()->routeIs('settings.branches.*', 'settings.callback-api-key.*') ? 'active open' : '' }}">
             <a href="javascript:void(0);" class="menu-link menu-toggle" title="Pengaturan Sistem">
                 <i class="menu-icon tf-icons bx bx-cog"></i>
                 <div data-i18n="Settings">Settings</div>
@@ -99,6 +95,11 @@
                 <li class="menu-item {{ request()->routeIs('settings.branches.*') ? 'active' : '' }}">
                     <a href="{{ route('settings.branches.index') }}" class="menu-link">
                         <div data-i18n="Branches">Branches</div>
+                    </a>
+                </li>
+                <li class="menu-item {{ request()->routeIs('settings.callback-api-key.*') ? 'active' : '' }}">
+                    <a href="{{ route('settings.callback-api-key.index') }}" class="menu-link">
+                        <div data-i18n="Callback API Key">Callback API Key</div>
                     </a>
                 </li>
             </ul>

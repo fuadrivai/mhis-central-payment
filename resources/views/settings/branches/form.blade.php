@@ -74,6 +74,20 @@
                             </div>
                         </div>
 
+                        <div class="mb-3">
+                            <label for="webhook_url" class="form-label">Webhook URL</label>
+                            <input id="webhook_url" name="webhook_url" type="url"
+                                class="form-control @error('webhook_url') is-invalid @enderror"
+                                value="{{ old('webhook_url', $branch->webhook_url) }}" maxlength="2048"
+                                placeholder="https://sistem-cabang.example.com/webhooks/payment">
+                            <div class="form-text">
+                                URL tujuan notifikasi pembayaran untuk sistem cabang ini. Gunakan alamat HTTPS yang dapat diakses server.
+                            </div>
+                            @error('webhook_url')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
                         @if ($hasVirtualAccounts)
                             <div class="alert alert-warning" role="alert">
                                 Prefix VA dikunci karena cabang ini sudah memiliki Virtual Account.
