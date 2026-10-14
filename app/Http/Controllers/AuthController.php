@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\AuthenticateUserRequest;
+use App\Services\Contracts\AuthServiceInterface;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly AuthServiceInterface $authService) {}
+
     public function index(): View
     {
         return view('auth.auth');
@@ -18,35 +20,21 @@ class AuthController extends Controller
     {
         $credentials = $request->validated();
 
-        if (! Auth::attempt([
-            'email' => $credentials['email'],
-            'password' => $credentials['password'],
-            'is_active' => true,
-        ])) {
-            return back()
+        $result = $this->authService->login($credentials['email'], $credentials['password']);
+
+        return match ($result) {
+            AuthServiceInterface::LOGIN_SUCCESS => redirect()->intended(route('home')),
+            AuthServiceInterface::LOGIN_UNAUTHORIZED => back()
+                ->withErrors(['email' => 'Your account does not have access to this application.']),
+            default => back()
                 ->withInput($request->safe()->only('email'))
-                ->withErrors(['email' => 'The provided credentials are incorrect or the account is inactive.']);
-        }
-
-        $request->session()->regenerate();
-
-        if (! $request->user()->hasRole('super_admin')) {
-            Auth::logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
-
-            return back()->withErrors(['email' => 'Your account does not have access to this application.']);
-        }
-
-        return redirect()->intended(route('home'));
+                ->withErrors(['email' => 'The provided credentials are incorrect or the account is inactive.']),
+        };
     }
 
     public function destroy(): RedirectResponse
     {
-        Auth::logout();
-
-        request()->session()->invalidate();
-        request()->session()->regenerateToken();
+        $this->authService->logout();
 
         return redirect()->route('login')->with('status', 'You have been signed out successfully.');
     }
