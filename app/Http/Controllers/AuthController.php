@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\AuthenticateUserRequest;
+use App\Models\User;
 use App\Services\Contracts\AuthServiceInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -21,9 +22,12 @@ class AuthController extends Controller
         $credentials = $request->validated();
 
         $result = $this->authService->login($credentials['email'], $credentials['password']);
+        $landingRoute = $request->user() instanceof User
+            ? $request->user()->landingRouteName()
+            : 'home';
 
         return match ($result) {
-            AuthServiceInterface::LOGIN_SUCCESS => redirect()->intended(route('home')),
+            AuthServiceInterface::LOGIN_SUCCESS => redirect()->intended(route($landingRoute)),
             AuthServiceInterface::LOGIN_UNAUTHORIZED => back()
                 ->withErrors(['email' => 'Your account does not have access to this application.']),
             default => back()

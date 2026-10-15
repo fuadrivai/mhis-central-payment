@@ -6,9 +6,11 @@
             <h4 class="mb-1">Pengaturan Cabang</h4>
             <p class="text-muted mb-0">Kelola identitas cabang dan prefix Virtual Account MHIS.</p>
         </div>
-        <a href="{{ route('settings.branches.create') }}" class="btn btn-primary">
-            <i class="bx bx-plus me-1"></i> Tambah Cabang
-        </a>
+        @if (auth()->user()->hasPermission('branches.create'))
+            <a href="{{ route('settings.branches.create') }}" class="btn btn-primary">
+                <i class="bx bx-plus me-1"></i> Tambah Cabang
+            </a>
+        @endif
     </div>
 
     @if (session('branch_api_key'))
@@ -77,16 +79,18 @@
                                 @endif
                             </td>
                             <td class="text-end text-nowrap">
-                                <a href="{{ route('settings.branches.edit', $branch) }}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bx bx-edit-alt me-1"></i> Edit
-                                </a>
-                                <form action="{{ route('settings.branches.rotate-api-key', $branch) }}" method="POST" class="d-inline"
-                                    onsubmit="return confirm('Rotasi API key akan langsung menonaktifkan key lama. Lanjutkan?');">
-                                    @csrf
-                                    <button type="submit" class="btn btn-sm btn-outline-warning">
-                                        <i class="bx bx-refresh me-1"></i> Rotasi Key
-                                    </button>
-                                </form>
+                                @if (auth()->user()->hasPermission('branches.update'))
+                                    <a href="{{ route('settings.branches.edit', $branch) }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bx bx-edit-alt me-1"></i> Edit
+                                    </a>
+                                    <form action="{{ route('settings.branches.rotate-api-key', $branch) }}" method="POST" class="d-inline"
+                                        onsubmit="return confirm('Rotasi API key akan langsung menonaktifkan key lama. Lanjutkan?');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-outline-warning">
+                                            <i class="bx bx-refresh me-1"></i> Rotasi Key
+                                        </button>
+                                    </form>
+                                @endif
                             </td>
                         </tr>
                     @empty
@@ -94,7 +98,9 @@
                             <td colspan="9" class="text-center py-5">
                                 <i class="bx bx-buildings fs-1 text-muted d-block mb-2"></i>
                                 <p class="text-muted mb-3">Belum ada data cabang.</p>
-                                <a href="{{ route('settings.branches.create') }}" class="btn btn-primary btn-sm">Tambah Cabang</a>
+                                @if (auth()->user()->hasPermission('branches.create'))
+                                    <a href="{{ route('settings.branches.create') }}" class="btn btn-primary btn-sm">Tambah Cabang</a>
+                                @endif
                             </td>
                         </tr>
                     @endforelse

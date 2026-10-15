@@ -15,12 +15,6 @@ class AuthService implements AuthServiceInterface
 
         session()->regenerate();
 
-        if (! Auth::user()->hasRole('super_admin')) {
-            $this->logout();
-
-            return self::LOGIN_UNAUTHORIZED;
-        }
-
         return self::LOGIN_SUCCESS;
     }
 

@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Bank;
 use App\Models\Branch;
 use App\Models\Student;
+use App\Models\VirtualAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -32,6 +34,13 @@ class FixedVirtualAccountApiTest extends TestCase
         $this->postJson(route('api.v1.virtual-accounts.fixed.store'), $this->payload())->assertUnauthorized();
         $this->postJson(route('api.v1.virtual-accounts.fixed.store'), $this->payload(), ['X-API-KEY' => 'wrong'])
             ->assertUnauthorized();
+    }
+
+    public function test_void_request_without_valid_api_key_is_rejected(): void
+    {
+        $this->postJson(route('api.v1.virtual-accounts.fixed.void'), [
+            'virtual_account_no' => '8576501001234567',
+        ])->assertUnauthorized();
     }
 
     public function test_inactive_branch_api_key_is_rejected(): void
@@ -139,6 +148,96 @@ class FixedVirtualAccountApiTest extends TestCase
             ->assertJsonPath('data.status', 'verification_required');
     }
 
+    public function test_fixed_va_is_voided_at_the_bank_and_marked_inactive(): void
+    {
+        Http::fake(['https://h2h.test/api/internal/va/update' => Http::response(['status' => 'success'], 200)]);
+        $branch = $this->createBranch();
+        $virtualAccount = $this->createFixedVirtualAccount($branch);
+
+        $this->postJson(route('api.v1.virtual-accounts.fixed.void'), [
+            'virtual_account_no' => $virtualAccount->virtual_account_no,
+        ], $this->headers())
+            ->assertOk()
+            ->assertJsonPath('data.virtual_account_no', $virtualAccount->virtual_account_no)
+            ->assertJsonPath('data.status', 'inactive')
+            ->assertJsonPath('message', 'Fixed VA berhasil di-void dan dinonaktifkan di bank.');
+
+        $this->assertDatabaseHas('virtual_accounts', [
+            'id' => $virtualAccount->id,
+            'status' => 'inactive',
+        ]);
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'PUT'
+            && $request->url() === 'https://h2h.test/api/internal/va/update'
+            && $request->data()['virtualAccountNo'] === $virtualAccount->virtual_account_no
+            && $request->data()['status'] === 'INACTIVE');
+    }
+
+    public function test_branch_cannot_void_another_branches_fixed_va(): void
+    {
+        $this->createBranch();
+        $otherBranch = $this->createBranch([
+            'code' => 'OTH',
+            'va_fixed_prefix' => '85765011',
+            'va_dynamic_prefix' => '85765992',
+            'api_key' => 'other-key',
+        ]);
+        $virtualAccount = $this->createFixedVirtualAccount($otherBranch);
+
+        $this->postJson(route('api.v1.virtual-accounts.fixed.void'), [
+            'virtual_account_no' => $virtualAccount->virtual_account_no,
+        ], $this->headers())->assertNotFound();
+
+        $this->assertDatabaseHas('virtual_accounts', [
+            'id' => $virtualAccount->id,
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_bank_rejection_keeps_fixed_va_active(): void
+    {
+        Http::fake(['https://h2h.test/api/internal/va/update' => Http::response(['message' => 'Invalid'], 422)]);
+        $branch = $this->createBranch();
+        $virtualAccount = $this->createFixedVirtualAccount($branch);
+
+        $this->postJson(route('api.v1.virtual-accounts.fixed.void'), [
+            'virtual_account_no' => $virtualAccount->virtual_account_no,
+        ], $this->headers())
+            ->assertUnprocessable()
+            ->assertJsonPath('data.status', 'active');
+
+        $this->assertDatabaseHas('virtual_accounts', [
+            'id' => $virtualAccount->id,
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_bank_server_error_returns_502_and_requires_status_verification(): void
+    {
+        Http::fake(['https://h2h.test/api/internal/va/update' => Http::response(['message' => 'down'], 500)]);
+        $branch = $this->createBranch();
+        $virtualAccount = $this->createFixedVirtualAccount($branch);
+
+        $this->postJson(route('api.v1.virtual-accounts.fixed.void'), [
+            'virtual_account_no' => $virtualAccount->virtual_account_no,
+        ], $this->headers())
+            ->assertStatus(502)
+            ->assertJsonPath('data.status', 'verification_required');
+
+        $this->assertDatabaseHas('virtual_accounts', [
+            'id' => $virtualAccount->id,
+            'status' => 'verification_required',
+        ]);
+    }
+
+    public function test_void_request_requires_virtual_account_number(): void
+    {
+        $this->createBranch();
+
+        $this->postJson(route('api.v1.virtual-accounts.fixed.void'), [], $this->headers())
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('virtual_account_no');
+    }
+
     public function test_bank_must_be_specified_when_several_banks_are_active(): void
     {
         $this->createBranch();
@@ -184,6 +283,22 @@ class FixedVirtualAccountApiTest extends TestCase
             'va_dynamic_prefix' => '85765991',
             'api_key' => self::API_KEY,
             'is_active' => true,
+        ]);
+    }
+
+    private function createFixedVirtualAccount(Branch $branch): VirtualAccount
+    {
+        return VirtualAccount::query()->create([
+            'branch_id' => $branch->id,
+            'bank_id' => Bank::query()->value('id') ?? Bank::factory()->create()->id,
+            'va_type' => 'fixed',
+            'partner_service_id' => '85765',
+            'customer_no' => '8576501001234567',
+            'virtual_account_no' => '8576501001234567',
+            'virtual_account_name' => 'Budi Santoso',
+            'current_amount' => '0.00',
+            'expired_at' => now()->addYear(),
+            'status' => 'active',
         ]);
     }
 }

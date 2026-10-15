@@ -30,6 +30,8 @@ class VerifyMandiriCallbackApiKey
             return response()->json(['message' => 'Invalid callback API key.'], 401);
         }
 
+        $request->attributes->set('audit_actor', $bank);
+
         return $next($request);
     }
 }

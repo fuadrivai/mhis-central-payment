@@ -115,7 +115,8 @@ class AuthenticationTest extends TestCase
         $response->assertSee('Transactions');
         $response->assertSee('Reconciliation');
         $response->assertSee('Reports');
-        $response->assertSee('Users &amp; Permissions', false);
+        $response->assertSee('Users');
+        $response->assertSee('Roles &amp; Permissions', false);
         $response->assertSee('Settings');
         $response->assertSee('Audit Logs');
     }

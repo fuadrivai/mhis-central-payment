@@ -36,16 +36,18 @@
                 Membuat key baru akan langsung menonaktifkan key sebelumnya.
             </p>
 
-            <form method="POST" action="{{ route('settings.callback-api-key.store') }}"
-                @if ($isConfigured)
-                    onsubmit="return confirm('Membuat key baru akan langsung menonaktifkan key yang sedang dipakai bank. Lanjutkan?');"
-                @endif>
-                @csrf
-                <button type="submit" class="btn btn-primary">
-                    <i class="bx bx-refresh me-1"></i>
-                    {{ $isConfigured ? 'Generate Ulang API Key' : 'Generate API Key' }}
-                </button>
-            </form>
+            @if (auth()->user()->hasPermission('callback_api_keys.update'))
+                <form method="POST" action="{{ route('settings.callback-api-key.store') }}"
+                    @if ($isConfigured)
+                        onsubmit="return confirm('Membuat key baru akan langsung menonaktifkan key yang sedang dipakai bank. Lanjutkan?');"
+                    @endif>
+                    @csrf
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bx bx-refresh me-1"></i>
+                        {{ $isConfigured ? 'Generate Ulang API Key' : 'Generate API Key' }}
+                    </button>
+                </form>
+            @endif
         </div>
     </div>
 @endsection

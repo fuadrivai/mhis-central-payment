@@ -2,6 +2,7 @@
 
 namespace App\Services\Implementations;
 
+use App\Enums\VirtualAccountType;
 use App\Models\PaymentTransaction;
 use App\Services\Contracts\PaymentTransactionServiceInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -16,8 +17,12 @@ class PaymentTransactionService implements PaymentTransactionServiceInterface
                 'bank:id,name',
                 'branch:id,name',
                 'invoice:id,invoice_number,bill_code',
-                'virtualAccount:id,virtual_account_no',
-            ]);
+                'virtualAccount:id,student_id,virtual_account_no,va_type',
+                'virtualAccount.student:id,nis',
+            ])
+            ->whereHas('virtualAccount', function (Builder $query): void {
+                $query->where('va_type', VirtualAccountType::Fixed->value);
+            });
 
         $search = trim((string) $search);
 
@@ -33,6 +38,9 @@ class PaymentTransactionService implements PaymentTransactionServiceInterface
                     })
                     ->orWhereHas('virtualAccount', function (Builder $virtualAccountQuery) use ($search): void {
                         $virtualAccountQuery->where('virtual_account_no', 'like', '%'.$search.'%');
+                    })
+                    ->orWhereHas('virtualAccount.student', function (Builder $studentQuery) use ($search): void {
+                        $studentQuery->where('nis', 'like', '%'.$search.'%');
                     });
             });
         }

@@ -122,6 +122,36 @@ class VirtualAccountService implements VirtualAccountServiceInterface
         return ['outcome' => $outcome, 'virtualAccount' => $virtualAccount];
     }
 
+    public function voidFixedVirtualAccount(Branch $branch, string $virtualAccountNo): array
+    {
+        [$virtualAccount, $bank, $gateway] = DB::transaction(function () use ($branch, $virtualAccountNo): array {
+            $virtualAccount = VirtualAccount::query()
+                ->where('branch_id', $branch->id)
+                ->where('virtual_account_no', $virtualAccountNo)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (
+                $virtualAccount->va_type !== VirtualAccountType::Fixed->value
+                || ! in_array($virtualAccount->status, ['active', 'verification_required'], true)
+            ) {
+                throw ValidationException::withMessages([
+                    'virtual_account_no' => 'Hanya Fixed VA aktif atau yang perlu diverifikasi yang dapat di-void.',
+                ]);
+            }
+
+            [$bank, $gateway] = $this->resolveBank((int) $virtualAccount->bank_id);
+            $virtualAccount->update(['status' => 'verification_required']);
+
+            return [$virtualAccount, $bank, $gateway];
+        });
+
+        $outcome = $this->deactivateVirtualAccount(null, $virtualAccount, $bank, $gateway, now(), automatic: false);
+        $virtualAccount->refresh();
+
+        return ['outcome' => $outcome, 'virtualAccount' => $virtualAccount];
+    }
+
     public function createDynamic(Invoice $invoice, int $bankId): array
     {
         [$bank, $gateway] = $this->resolveBank($bankId);

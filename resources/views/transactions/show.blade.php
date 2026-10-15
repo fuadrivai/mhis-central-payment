@@ -140,17 +140,19 @@
                         <p class="text-muted">Callback cabang belum pernah dijadwalkan untuk transaksi ini.</p>
                     @endif
 
-                    <p class="text-muted">
-                        Callback dikirim tanpa autentikasi HTTP tambahan. Pastikan endpoint cabang menggunakan HTTPS
-                        dan mendeduplikasi event berdasarkan ID callback.
-                    </p>
+                    @if (auth()->user()->hasPermission('transactions.update'))
+                        <p class="text-muted">
+                            Callback dikirim tanpa autentikasi HTTP tambahan. Pastikan endpoint cabang menggunakan HTTPS
+                            dan mendeduplikasi event berdasarkan ID callback.
+                        </p>
 
-                    <form method="POST" action="{{ route('payment-transactions.callback.retry', $transaction) }}">
-                        @csrf
-                        <button type="submit" class="btn btn-outline-primary">
-                            <i class="bx bx-refresh me-1"></i> Kirim Ulang Callback
-                        </button>
-                    </form>
+                        <form method="POST" action="{{ route('transactions.callback.retry', $transaction) }}">
+                            @csrf
+                            <button type="submit" class="btn btn-outline-primary">
+                                <i class="bx bx-refresh me-1"></i> Kirim Ulang Callback
+                            </button>
+                        </form>
+                    @endif
                 </div>
             </div>
         </div>

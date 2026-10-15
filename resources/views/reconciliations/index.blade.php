@@ -12,9 +12,11 @@
                 <h5 class="mb-1">Unggah Laporan Bank</h5>
                 <small class="text-muted">CSV maksimal 10 MB dan 10.000 transaksi.</small>
             </div>
-            <a href="{{ route('reconciliations.template') }}" class="btn btn-outline-primary">
-                <i class="bx bx-download me-1"></i> Unduh Template CSV
-            </a>
+            @if (auth()->user()->hasPermission('reconciliations.view'))
+                <a href="{{ route('reconciliations.template') }}" class="btn btn-outline-primary">
+                    <i class="bx bx-download me-1"></i> Unduh Template CSV
+                </a>
+            @endif
         </div>
         <div class="card-body">
             @if ($errors->any())
@@ -27,6 +29,7 @@
                 </div>
             @endif
 
+            @if (auth()->user()->hasPermission('reconciliations.create'))
             <form method="POST" action="{{ route('reconciliations.store') }}" enctype="multipart/form-data">
                 @csrf
                 <div class="row g-3">
@@ -70,6 +73,7 @@
                     </div>
                 </div>
             </form>
+            @endif
         </div>
     </div>
 

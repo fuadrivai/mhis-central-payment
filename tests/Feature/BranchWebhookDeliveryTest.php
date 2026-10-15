@@ -148,7 +148,7 @@ class BranchWebhookDeliveryTest extends TestCase
         $delivery = $this->createDelivery(status: 'failed');
 
         $this->actingAs($user)
-            ->post(route('payment-transactions.callback.retry', $delivery->paymentTransaction))
+            ->post(route('transactions.callback.retry', $delivery->paymentTransaction))
             ->assertRedirect()
             ->assertSessionHas('status', 'Callback ke cabang telah dimasukkan ke antrean.');
 
@@ -162,7 +162,7 @@ class BranchWebhookDeliveryTest extends TestCase
     {
         $delivery = $this->createDelivery(status: 'failed');
 
-        $this->post(route('payment-transactions.callback.retry', $delivery->paymentTransaction))
+        $this->post(route('transactions.callback.retry', $delivery->paymentTransaction))
             ->assertRedirect(route('login'));
 
         $this->assertSame('failed', $delivery->refresh()->status);
@@ -174,7 +174,7 @@ class BranchWebhookDeliveryTest extends TestCase
         $delivery = $this->createDelivery(status: 'failed');
 
         $this->actingAs($user)
-            ->post(route('payment-transactions.callback.retry', $delivery->paymentTransaction))
+            ->post(route('transactions.callback.retry', $delivery->paymentTransaction))
             ->assertForbidden();
 
         $this->assertSame('failed', $delivery->refresh()->status);
@@ -186,7 +186,7 @@ class BranchWebhookDeliveryTest extends TestCase
         $delivery = $this->createDelivery(status: 'failed', webhookUrl: null);
 
         $this->actingAs($user)
-            ->post(route('payment-transactions.callback.retry', $delivery->paymentTransaction))
+            ->post(route('transactions.callback.retry', $delivery->paymentTransaction))
             ->assertRedirect()
             ->assertSessionHas('error', 'URL callback cabang belum dikonfigurasi.');
 

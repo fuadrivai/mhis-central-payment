@@ -8,16 +8,16 @@
 
     <div class="card mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ route('payment-transactions.index') }}">
+            <form method="GET" action="{{ route('transactions.index') }}">
                 <div class="input-group" style="max-width: 520px;">
                     <input type="search" class="form-control" name="search" value="{{ $search }}"
-                        placeholder="Cari referensi, invoice, bill code, atau nomor VA"
+                        placeholder="Cari NIS, referensi, invoice, bill code, atau nomor VA"
                         aria-label="Cari transaksi pembayaran">
                     <button type="submit" class="btn btn-outline-primary">
                         <i class="bx bx-search me-1"></i> Cari
                     </button>
                     @if ($search !== '')
-                        <a href="{{ route('payment-transactions.index') }}" class="btn btn-outline-secondary">Hapus</a>
+                        <a href="{{ route('transactions.index') }}" class="btn btn-outline-secondary">Hapus</a>
                     @endif
                 </div>
             </form>
@@ -32,6 +32,7 @@
                         <th>Waktu Bayar</th>
                         <th>No. Referensi</th>
                         <th>Invoice / Bill Code</th>
+                        <th>NIS</th>
                         <th>Virtual Account</th>
                         <th>Cabang / Bank</th>
                         <th class="text-end">Nominal</th>
@@ -47,6 +48,7 @@
                                 <div>{{ $transaction->invoice?->invoice_number ?? '-' }}</div>
                                 <small class="text-muted">{{ $transaction->invoice?->bill_code ?? '-' }}</small>
                             </td>
+                            <td>{{ $transaction->virtualAccount?->student?->nis ?? '-' }}</td>
                             <td>{{ $transaction->virtualAccount?->virtual_account_no ?? '-' }}</td>
                             <td>
                                 <div>{{ $transaction->branch?->name ?? '-' }}</div>
@@ -54,7 +56,7 @@
                             </td>
                             <td class="text-end">Rp. {{ number_format((float) $transaction->paid_amount, 0, '.', ',') }}</td>
                             <td class="text-center">
-                                <a href="{{ route('payment-transactions.show', $transaction) }}"
+                                <a href="{{ route('transactions.show', $transaction) }}"
                                     class="btn btn-sm btn-outline-primary" aria-label="Detail transaksi">
                                     <i class="bx bx-show"></i>
                                 </a>
@@ -62,7 +64,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5">
+                            <td colspan="8" class="text-center py-5">
                                 <i class="bx bx-transfer-alt fs-1 text-muted d-block mb-2"></i>
                                 <p class="text-muted mb-0">
                                     {{ $search !== '' ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi pembayaran.' }}

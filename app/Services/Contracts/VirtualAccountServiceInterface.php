@@ -3,6 +3,7 @@
 namespace App\Services\Contracts;
 
 use App\Enums\VirtualAccountType;
+use App\Models\Branch;
 use App\Models\Invoice;
 use App\Models\VirtualAccount;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -35,6 +36,13 @@ interface VirtualAccountServiceInterface
      * @return array{outcome: self::OUTCOME_*, virtualAccount: VirtualAccount}
      */
     public function createFixed(array $data): array;
+
+    /**
+     * Void a fixed VA owned by the given branch through its bank.
+     *
+     * @return array{outcome: self::OUTCOME_*, virtualAccount: VirtualAccount}
+     */
+    public function voidFixedVirtualAccount(Branch $branch, string $virtualAccountNo): array;
 
     /**
      * Create a dynamic VA that bills the given invoice through the given bank.

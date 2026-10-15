@@ -65,7 +65,7 @@
             </div>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 invoice-actions">
-            @if ($invoice->status === 'pending')
+            @if ($invoice->status === 'pending' && auth()->user()->hasPermission('invoices.delete'))
                 @if ($invoice->expired_at?->isFuture()
                     && $invoice->va_type === 'dynamic'
                     && $invoice->virtualAccount?->status === 'active')
@@ -95,7 +95,8 @@
     </div>
     <div id="copy-notification" class="copy-notification" role="status" aria-live="polite"></div>
 
-    @if ($invoice->status === 'pending'
+    @if (auth()->user()->hasPermission('invoices.delete')
+        && $invoice->status === 'pending'
         && $invoice->expired_at?->isFuture()
         && $invoice->va_type === 'dynamic'
         && $invoice->virtualAccount?->status === 'active')
@@ -216,7 +217,7 @@
                             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <h6 class="mb-0">
                                     Transaksi
-                                    <a href="{{ route('payment-transactions.show', $transaction) }}">
+                                    <a href="{{ route('transactions.show', $transaction) }}">
                                         #{{ $transaction->id }}
                                     </a>
                                 </h6>

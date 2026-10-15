@@ -197,9 +197,11 @@
                         <button type="button" class="btn btn-outline-secondary d-flex align-items-center justify-content-center" disabled>
                             <i class="bx bx-plus-circle me-2"></i> Buat Tagihan Baru <span class="badge bg-label-primary ms-auto">Fase 2</span>
                         </button>
-                        <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-outline-primary d-flex align-items-center justify-content-center">
-                            <i class="bx bx-credit-card me-2"></i> Buat Fixed VA Siswa
-                        </a>
+                        @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
+                            <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-outline-primary d-flex align-items-center justify-content-center">
+                                <i class="bx bx-credit-card me-2"></i> Buat Fixed VA Siswa
+                            </a>
+                        @endif
                     </div>
 
                     <div class="alert alert-info d-flex align-items-center mb-0" role="alert">

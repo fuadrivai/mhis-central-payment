@@ -97,7 +97,7 @@ class InvoiceDetailActionsTest extends TestCase
             ->assertSee('Kanal VA')
             ->assertSee('REF-TRANSACTION-001')
             ->assertSee('REQ-TRANSACTION-001')
-            ->assertSee(route('payment-transactions.show', $transaction), false)
+            ->assertSee(route('transactions.show', $transaction), false)
             ->assertDontSee('<table', false);
     }
 
@@ -108,7 +108,7 @@ class InvoiceDetailActionsTest extends TestCase
         $transaction = $this->createPaymentTransaction($invoice);
 
         $this->actingAs($user)
-            ->get(route('payment-transactions.show', $transaction))
+            ->get(route('transactions.show', $transaction))
             ->assertOk()
             ->assertSee('Detail Transaksi #'.$transaction->id)
             ->assertSee('REF-TRANSACTION-001')
@@ -128,7 +128,7 @@ class InvoiceDetailActionsTest extends TestCase
         $invoice = $this->createInvoiceWithVa();
         $transaction = $this->createPaymentTransaction($invoice);
 
-        $this->get(route('payment-transactions.show', $transaction))
+        $this->get(route('transactions.show', $transaction))
             ->assertRedirect(route('login'));
     }
 
@@ -139,7 +139,7 @@ class InvoiceDetailActionsTest extends TestCase
         $transaction = $this->createPaymentTransaction($invoice);
 
         $this->actingAs($user)
-            ->get(route('payment-transactions.show', $transaction))
+            ->get(route('transactions.show', $transaction))
             ->assertForbidden();
     }
 

@@ -6,9 +6,11 @@
             <h4 class="mb-1">Fixed Virtual Accounts</h4>
             <p class="text-muted mb-0">VA tetap siswa untuk pembayaran SPP dan Annual Fee.</p>
         </div>
-        <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary">
-            <i class="bx bx-plus me-1"></i> Buat Fixed VA
-        </a>
+        @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
+            <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary">
+                <i class="bx bx-plus me-1"></i> Buat Fixed VA
+            </a>
+        @endif
     </div>
 
     <div class="card">
@@ -70,9 +72,11 @@
                             <td colspan="8" class="text-center py-5">
                                 <i class="bx bx-credit-card fs-1 text-muted d-block mb-2"></i>
                                 <p class="text-muted mb-3">Belum ada Fixed VA.</p>
-                                <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary btn-sm">
-                                    Buat Fixed VA pertama
-                                </a>
+                                @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
+                                    <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary btn-sm">
+                                        Buat Fixed VA pertama
+                                    </a>
+                                @endif
                             </td>
                         </tr>
                     @endforelse
