@@ -7,7 +7,9 @@ use App\Models\Branch;
 use App\Models\Invoice;
 use App\Models\VirtualAccount;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 class InvoiceApiTest extends TestCase
@@ -31,6 +33,10 @@ class InvoiceApiTest extends TestCase
     public function test_request_without_valid_api_key_is_rejected(): void
     {
         $this->postJson(route('api.v1.invoices.store'), $this->payload())->assertUnauthorized();
+        $this->withBasicAuth('invalid-branch-api-key', '')->postJson(route('api.v1.invoices.store'), $this->payload())
+            ->assertUnauthorized();
+        $this->withBasicAuth(self::API_KEY, 'wrong-password')->postJson(route('api.v1.invoices.store'), $this->payload())
+            ->assertUnauthorized();
     }
 
     public function test_invoice_is_created_with_a_random_dynamic_va_using_the_branch_prefix(): void
@@ -50,6 +56,120 @@ class InvoiceApiTest extends TestCase
 
         $virtualAccount = VirtualAccount::query()->where('invoice_id', $invoice->id)->firstOrFail();
         $this->assertMatchesRegularExpression('/^85765991\d{8}$/', $virtualAccount->virtual_account_no);
+    }
+
+    public function test_xendit_payload_works_with_basic_auth_and_returns_a_payment_url(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        Http::fake(['https://h2h.test/api/internal/va/create' => Http::response(['status' => 'success'], 200)]);
+        $this->createBranch();
+
+        $response = $this->withBasicAuth(self::API_KEY, '0')->postJson(route('api.v1.invoices.store'), [
+            'external_id' => 'SEAMO2026-0006',
+            'amount' => 250000,
+            'payer_email' => 'fuad.r@mutiaraharapan.sch.id',
+            'description' => 'Lomba Seamo Primary',
+            'invoice_duration' => 604800,
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.bill_code', 'SEAMO2026-0006')
+            ->assertJsonPath('data.bill_name', 'Lomba Seamo Primary')
+            ->assertJsonPath('data.customer_name', null)
+            ->assertJsonPath('data.email', 'fuad.r@mutiaraharapan.sch.id')
+            ->assertJsonPath('data.expired_at', '2026-10-27T10:00:00+00:00')
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('created', '2026-10-20T10:00:00+00:00')
+            ->assertJsonPath('expiry_date', '2026-10-27T10:00:00+00:00');
+
+        $invoice = Invoice::query()->firstOrFail();
+        $this->assertDatabaseHas('invoices', [
+            'bill_code' => 'SEAMO2026-0006',
+            'bill_name' => 'Lomba Seamo Primary',
+            'customer_name' => null,
+            'email' => 'fuad.r@mutiaraharapan.sch.id',
+            'amount' => '250000.00',
+            'expired_at' => '2026-10-27 10:00:00',
+        ]);
+        $this->assertTrue(URL::hasValidSignature(Request::create($response->json('invoice_url'))));
+        $this->get($response->json('invoice_url'))->assertOk();
+    }
+
+    public function test_xendit_invoice_duration_must_be_a_positive_integer(): void
+    {
+        $this->createBranch();
+
+        $this->withBasicAuth(self::API_KEY, '')->postJson(route('api.v1.invoices.store'), [
+            'external_id' => 'SEAMO2026-0007',
+            'amount' => 250000,
+            'payer_email' => 'fuad.r@mutiaraharapan.sch.id',
+            'description' => 'Lomba Seamo Primary',
+            'invoice_duration' => 0,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('invoice_duration');
+
+        $this->assertDatabaseCount('invoices', 0);
+    }
+
+    public function test_invoice_can_be_expired_using_the_id_returned_by_create(): void
+    {
+        Http::fake([
+            'https://h2h.test/api/internal/va/create' => Http::response(['status' => 'success'], 200),
+            'https://h2h.test/api/internal/va/update' => Http::response(['status' => 'success'], 200),
+        ]);
+        $this->createBranch();
+
+        $createResponse = $this->postJson(route('api.v1.invoices.store'), $this->payload(), $this->headers())
+            ->assertCreated()
+            ->assertJsonPath('id', Invoice::query()->value('id'));
+
+        $this->withBasicAuth(self::API_KEY, '0')
+            ->postJson(route('api.v1.invoices.expire', ['transId' => $createResponse->json('id')]))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('status', 'EXPIRED')
+            ->assertJsonPath('data.bill_code', 'SPP-2027-01');
+
+        $this->assertDatabaseHas('invoices', [
+            'bill_code' => 'SPP-2027-01',
+            'status' => 'expired',
+        ]);
+        $this->assertDatabaseHas('virtual_accounts', [
+            'invoice_id' => Invoice::query()->value('id'),
+            'status' => 'inactive',
+        ]);
+    }
+
+    public function test_invoice_expire_endpoint_requires_branch_authentication(): void
+    {
+        $this->postJson(route('api.v1.invoices.expire', ['transId' => 'SPP-2027-01']))
+            ->assertUnauthorized();
+    }
+
+    public function test_invoice_expire_endpoint_does_not_find_an_invoice_from_another_branch(): void
+    {
+        Http::fake(['https://h2h.test/api/internal/va/create' => Http::response(['status' => 'success'], 200)]);
+        $this->createBranch();
+
+        $this->postJson(route('api.v1.invoices.store'), $this->payload(), $this->headers())->assertCreated();
+
+        $otherBranch = $this->createBranch([
+            'name' => 'Other Branch',
+            'code' => 'OTH',
+            'api_key' => 'other-branch-api-key-123456789',
+            'va_fixed_prefix' => '85765020',
+            'va_dynamic_prefix' => '85765992',
+        ]);
+
+        $this->withBasicAuth($otherBranch->api_key, '0')
+            ->postJson(route('api.v1.invoices.expire', ['transId' => 'SPP-2027-01']))
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('invoices', [
+            'bill_code' => 'SPP-2027-01',
+            'status' => 'pending',
+        ]);
     }
 
     public function test_each_invoice_receives_a_different_va_number(): void
@@ -112,7 +232,7 @@ class InvoiceApiTest extends TestCase
 
         $this->postJson(route('api.v1.invoices.store'), [], $this->headers())
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['bill_code', 'bill_name', 'customer_name', 'email', 'amount', 'expired_at']);
+            ->assertJsonValidationErrors(['bill_code', 'bill_name', 'email', 'amount', 'expired_at']);
     }
 
     public function test_email_is_stored_and_must_be_valid(): void

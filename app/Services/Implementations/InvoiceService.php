@@ -185,7 +185,7 @@ class InvoiceService implements InvoiceServiceInterface
             'fee_amount' => $feeAmount,
             'total_amount' => $totalAmount,
             'status' => 'pending',
-            'expired_at' => $data['expired_at'].':00',
+            'expired_at' => Carbon::parse($data['expired_at'])->toDateTimeString(),
         ]));
 
         $result = $this->virtualAccounts->createDynamic($invoice, (int) $data['bank_id']);

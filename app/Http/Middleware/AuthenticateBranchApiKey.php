@@ -13,6 +13,10 @@ class AuthenticateBranchApiKey
     {
         $apiKey = (string) $request->header('X-API-KEY');
 
+        if ($apiKey === '' && in_array($request->getPassword(), ['', '0'], true)) {
+            $apiKey = (string) $request->getUser();
+        }
+
         $branch = $apiKey === ''
             ? null
             : Branch::query()->active()->where('api_key', $apiKey)->first();

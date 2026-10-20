@@ -14,6 +14,8 @@ Route::prefix('v1')->middleware(['branch.api', 'throttle:branch-api'])->group(fu
 
     Route::post('/invoice/create', [InvoiceController::class, 'store'])
         ->name('api.v1.invoices.store');
+    Route::post('/invoices/{transId}/expire!', [InvoiceController::class, 'expire'])
+        ->name('api.v1.invoices.expire');
 });
 
 Route::post('/v1/callbacks/va', [MandiriPaymentCallbackController::class, 'store'])
