@@ -17,7 +17,10 @@ class AuditLogController extends Controller
             'route' => ['nullable', 'string', 'max:100'],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50, 100, 200])],
         ]);
+
+        $perPage = (int) ($filters['per_page'] ?? 10);
 
         $logs = AuditLog::query()
             ->when($filters['event'] ?? null, fn ($query, string $event) => $query->where('event', $event))
@@ -32,9 +35,9 @@ class AuditLogController extends Controller
             ->when($filters['to'] ?? null, fn ($query, string $date) => $query->where('created_at', '<=', $date.' 23:59:59.999999'))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->paginate(50)
+            ->paginate($perPage)
             ->withQueryString();
 
-        return view('audit-logs.index', compact('logs', 'filters'));
+        return view('audit-logs.index', compact('logs', 'filters', 'perPage'));
     }
 }

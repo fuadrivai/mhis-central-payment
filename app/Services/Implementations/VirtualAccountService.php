@@ -13,12 +13,15 @@ use App\Services\Contracts\BankGatewayInterface;
 use App\Services\Contracts\VirtualAccountServiceInterface;
 use App\Services\Gateways\BankGatewayManager;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
@@ -29,23 +32,44 @@ class VirtualAccountService implements VirtualAccountServiceInterface
 
     private const MAX_NUMBER_ATTEMPTS = 10;
 
+    private const MAX_FIXED_IMPORT_ROWS = 500;
+
+    private const FIXED_IMPORT_HEADERS = ['nis', 'nama_siswa', 'grade', 'email', 'tgl_expired_va'];
+
     public function __construct(private readonly BankGatewayManager $gateways) {}
 
-    public function paginate(?VirtualAccountType $type = null, int $perPage = 15): LengthAwarePaginator
+    public function paginate(?VirtualAccountType $type = null, int $perPage = 15, ?string $search = null): LengthAwarePaginator
     {
+        $search = trim((string) $search);
+
         return VirtualAccount::query()
             ->with([
                 'branch:id,name,code',
                 'bank:id,name,code',
-                'student:id,branch_id,nis,name,status',
+                'student:id,branch_id,nis,name,grade_class,parent_email,additional_email,status',
             ])
             ->when(
                 $type === VirtualAccountType::Dynamic,
                 fn ($query) => $query->with('invoice:id,invoice_number,bill_code,bill_name,total_amount,status,paid_at,expired_at'),
             )
             ->when($type, fn ($query) => $query->where('va_type', $type->value))
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $query->where(function (Builder $query) use ($search): void {
+                    $query
+                        ->where('virtual_account_no', 'like', '%'.$search.'%')
+                        ->orWhereHas('student', function (Builder $studentQuery) use ($search): void {
+                            $studentQuery
+                                ->where('nis', 'like', '%'.$search.'%')
+                                ->orWhere('name', 'like', '%'.$search.'%');
+                        })
+                        ->orWhereHas('branch', function (Builder $branchQuery) use ($search): void {
+                            $branchQuery->where('name', 'like', '%'.$search.'%');
+                        });
+                });
+            })
             ->orderByDesc('id')
-            ->paginate($perPage);
+            ->paginate($perPage)
+            ->appends(['search' => $search]);
     }
 
     public function activeBranches(): Collection
@@ -122,6 +146,161 @@ class VirtualAccountService implements VirtualAccountServiceInterface
         return ['outcome' => $outcome, 'virtualAccount' => $virtualAccount];
     }
 
+    public function findEditableFixedVirtualAccount(VirtualAccount $virtualAccount): VirtualAccount
+    {
+        return VirtualAccount::query()
+            ->with([
+                'student:id,branch_id,nis,name,grade_class,parent_email,additional_email',
+                'branch:id,name,code',
+                'bank:id,name',
+            ])
+            ->where('va_type', VirtualAccountType::Fixed->value)
+            ->where('status', 'active')
+            ->whereNotNull('student_id')
+            ->findOrFail($virtualAccount->id);
+    }
+
+    public function updateFixed(VirtualAccount $virtualAccount, array $data): string
+    {
+        [$virtualAccount, $student, $bank, $gateway] = DB::transaction(function () use ($virtualAccount): array {
+            $lockedVirtualAccount = VirtualAccount::query()
+                ->with('branch:id,code')
+                ->where('va_type', VirtualAccountType::Fixed->value)
+                ->where('status', 'active')
+                ->whereNotNull('student_id')
+                ->lockForUpdate()
+                ->findOrFail($virtualAccount->id);
+            $student = Student::query()->lockForUpdate()->findOrFail($lockedVirtualAccount->student_id);
+            [$bank, $gateway] = $this->resolveBank((int) $lockedVirtualAccount->bank_id);
+
+            $lockedVirtualAccount->update(['status' => 'verification_required']);
+
+            return [$lockedVirtualAccount, $student, $bank, $gateway];
+        });
+        $expiredAt = str_replace('T', ' ', $data['expired_at']).':00';
+        $payload = [
+            'virtualAccountNo' => $virtualAccount->virtual_account_no,
+            'customerNo' => $virtualAccount->customer_no,
+            'virtualAccountName' => $data['name'],
+            'totalAmount' => number_format((float) $virtualAccount->current_amount, 2, '.', ''),
+            'feeAmount' => '0.00',
+            'billCode' => 'FIXED-'.$virtualAccount->branch->code.'-'.$student->nis,
+            'billName' => 'Fixed VA SPP - '.$data['name'],
+            'expiredAt' => $expiredAt,
+            'status' => 'ACTIVE',
+        ];
+        $logContext = [
+            'branch_id' => $virtualAccount->branch_id,
+            'bank_id' => $bank->id,
+            'virtual_account_id' => $virtualAccount->id,
+            'endpoint' => $gateway->updateVirtualAccountEndpoint(),
+            'http_method' => 'PUT',
+            'request_payload' => $payload,
+        ];
+        $startedAt = hrtime(true);
+
+        try {
+            $response = $gateway->updateVirtualAccount($payload);
+        } catch (ConnectionException $exception) {
+            H2hApiLog::query()->create($logContext + [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'error_message' => Str::limit($exception->getMessage(), 2000),
+            ]);
+
+            Log::warning('Bank connection outcome is unknown for fixed virtual account update.', [
+                'bank_id' => $bank->id,
+                'virtual_account_id' => $virtualAccount->id,
+            ]);
+
+            return self::OUTCOME_UNKNOWN;
+        }
+
+        H2hApiLog::query()->create($logContext + [
+            'response_status' => $response->status,
+            'response_payload' => $response->payload,
+            'duration_ms' => $this->elapsedMs($startedAt),
+        ]);
+
+        if (! $response->successful) {
+            if (! $response->serverError) {
+                DB::transaction(function () use ($virtualAccount, $response): void {
+                    VirtualAccount::query()
+                        ->lockForUpdate()
+                        ->findOrFail($virtualAccount->id)
+                        ->update([
+                            'status' => 'active',
+                            'h2h_response_raw' => $response->payload,
+                        ]);
+                });
+            }
+
+            return $response->serverError ? self::OUTCOME_SERVER_ERROR : self::OUTCOME_REJECTED;
+        }
+
+        DB::transaction(function () use ($virtualAccount, $student, $data, $expiredAt, $response): void {
+            $lockedStudent = Student::query()->lockForUpdate()->findOrFail($student->id);
+            $lockedVirtualAccount = VirtualAccount::query()->lockForUpdate()->findOrFail($virtualAccount->id);
+            $lockedStudent->update([
+                'name' => $data['name'],
+                'grade_class' => $data['grade_class'],
+                'parent_email' => $data['parent_email'],
+                'additional_email' => $data['additional_email'],
+            ]);
+            $lockedVirtualAccount->update([
+                'virtual_account_name' => $data['name'],
+                'expired_at' => $expiredAt,
+                'status' => 'active',
+                'h2h_response_raw' => $response->payload,
+            ]);
+        });
+
+        return self::OUTCOME_UPDATED;
+    }
+
+    public function bulkCreateFixed(int $branchId, int $bankId, UploadedFile $studentFile): array
+    {
+        $branch = Branch::query()->active()->findOrFail($branchId);
+
+        if (! preg_match('/^[0-9]{8}$/', $branch->va_fixed_prefix)) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Prefix Fixed VA cabang harus terdiri dari 8 digit angka.',
+            ]);
+        }
+
+        $this->resolveBank($bankId);
+        $rows = $this->readFixedImportFile($studentFile);
+        $this->validateFixedImportRows($rows, $branch, $bankId);
+
+        $results = [];
+        $created = 0;
+
+        foreach ($rows as $row) {
+            $result = $this->createFixed([
+                'branch_id' => $branch->id,
+                'bank_id' => $bankId,
+                'va_number_mode' => 'automatic',
+                'nis' => $row['nis'],
+                'name' => $row['name'],
+                'grade_class' => $row['grade_class'],
+                'parent_email' => $row['parent_email'],
+                'additional_email' => $row['additional_email'],
+                'expired_at' => $row['expired_at'],
+            ]);
+
+            if ($result['outcome'] === VirtualAccountServiceInterface::OUTCOME_ACTIVE) {
+                $created++;
+            }
+
+            $results[] = [
+                'row' => $row['row'],
+                'nis' => $row['nis'],
+                'outcome' => $result['outcome'],
+            ];
+        }
+
+        return ['created' => $created, 'results' => $results];
+    }
+
     public function voidFixedVirtualAccount(Branch $branch, string $virtualAccountNo): array
     {
         [$virtualAccount, $bank, $gateway] = DB::transaction(function () use ($branch, $virtualAccountNo): array {
@@ -182,7 +361,7 @@ class VirtualAccountService implements VirtualAccountServiceInterface
             'partnerServiceId' => $gateway->partnerServiceId(),
             'customerNo' => $vaNumber,
             'virtualAccountNo' => $vaNumber,
-            'virtualAccountName' => $invoice->customer_name ?? $invoice->email,
+            'virtualAccountName' => $invoice->customer_name ?? $invoice->email ?? $invoice->bill_name,
             'totalAmount' => $totalAmount,
             'feeAmount' => number_format((float) $invoice->fee_amount, 2, '.', ''),
             'billCode' => $invoice->bill_code,
@@ -416,7 +595,7 @@ class VirtualAccountService implements VirtualAccountServiceInterface
                     'partner_service_id' => $gateway->partnerServiceId(),
                     'customer_no' => $vaNumber,
                     'virtual_account_no' => $vaNumber,
-                    'virtual_account_name' => $invoice->customer_name ?? $invoice->email,
+                    'virtual_account_name' => $invoice->customer_name ?? $invoice->email ?? $invoice->bill_name,
                     'current_amount' => $totalAmount,
                     'expired_at' => $invoice->expired_at,
                     'status' => 'pending_h2h',
@@ -448,6 +627,181 @@ class VirtualAccountService implements VirtualAccountServiceInterface
         }
 
         return $branch->va_dynamic_prefix.$suffix;
+    }
+
+    /**
+     * @return array<int, array{row: int, nis: string, name: string, grade_class: ?string, parent_email: string, additional_email: ?string, expired_at: string}>
+     */
+    private function readFixedImportFile(UploadedFile $studentFile): array
+    {
+        $path = $studentFile->getRealPath();
+        $stream = $path === false ? false : fopen($path, 'rb');
+
+        if ($stream === false) {
+            throw ValidationException::withMessages(['student_file' => 'File CSV tidak dapat dibaca.']);
+        }
+
+        try {
+            $headers = fgetcsv($stream, null, ',', '"', '');
+
+            if ($headers === false) {
+                throw ValidationException::withMessages(['student_file' => 'File CSV tidak memiliki header.']);
+            }
+
+            $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $headers[0]);
+            $headers = array_map(static fn ($header): string => mb_strtolower(trim((string) $header)), $headers);
+
+            if ($headers !== self::FIXED_IMPORT_HEADERS) {
+                throw ValidationException::withMessages([
+                    'student_file' => 'Header CSV harus berurutan: nis, nama_siswa, grade, email, tgl_expired_va.',
+                ]);
+            }
+
+            $rows = [];
+            $errors = [];
+            $rowNumber = 1;
+            $dataRowCount = 0;
+
+            while (($values = fgetcsv($stream, null, ',', '"', '')) !== false) {
+                $rowNumber++;
+
+                if ($values === [null] || count(array_filter($values, static fn ($value): bool => trim((string) $value) !== '')) === 0) {
+                    continue;
+                }
+
+                $dataRowCount++;
+
+                if ($dataRowCount > self::MAX_FIXED_IMPORT_ROWS) {
+                    throw ValidationException::withMessages([
+                        'student_file' => 'File CSV maksimal berisi '.self::MAX_FIXED_IMPORT_ROWS.' baris data.',
+                    ]);
+                }
+
+                if (count($values) !== count(self::FIXED_IMPORT_HEADERS)) {
+                    $errors[] = "Baris {$rowNumber}: jumlah kolom harus tepat 5.";
+
+                    continue;
+                }
+
+                $expiredAt = trim((string) $values[4]);
+
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $expiredAt) === 1) {
+                    $expiredAt .= 'T23:59';
+                } elseif (preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/', $expiredAt) === 1) {
+                    $expiredAt = str_replace(' ', 'T', mb_substr($expiredAt, 0, 16));
+                }
+
+                $emails = array_map('trim', explode(',', trim((string) $values[3])));
+
+                $row = [
+                    'row' => $rowNumber,
+                    'nis' => trim((string) $values[0]),
+                    'name' => trim((string) $values[1]),
+                    'grade_class' => trim((string) $values[2]) ?: null,
+                    'parent_email' => $emails[0] ?? '',
+                    'additional_email' => count($emails) === 2 ? ($emails[1] ?: null) : null,
+                    'expired_at' => $expiredAt,
+                ];
+
+                $validator = Validator::make($row, [
+                    'nis' => ['required', 'regex:/^[0-9]{8}$/'],
+                    'name' => ['required', 'string', 'max:255'],
+                    'grade_class' => ['nullable', 'string', 'max:50'],
+                    'parent_email' => ['required', 'email', 'max:255'],
+                    'additional_email' => ['nullable', 'email', 'max:255'],
+                    'expired_at' => ['required', 'date_format:Y-m-d\TH:i', 'after:now'],
+                ], [
+                    'nis.required' => 'NIS wajib diisi.',
+                    'nis.regex' => 'NIS wajib tepat 8 digit angka.',
+                    'name.required' => 'Nama siswa wajib diisi.',
+                    'name.max' => 'Nama siswa maksimal 255 karakter.',
+                    'grade_class.max' => 'Grade maksimal 50 karakter.',
+                    'parent_email.required' => 'Email wajib diisi.',
+                    'parent_email.email' => 'Email harus berupa alamat yang valid.',
+                    'parent_email.max' => 'Email maksimal 255 karakter.',
+                    'additional_email.email' => 'Email kedua harus berupa alamat yang valid.',
+                    'additional_email.max' => 'Email kedua maksimal 255 karakter.',
+                    'expired_at.required' => 'Tanggal expired VA wajib diisi.',
+                    'expired_at.date_format' => 'Tanggal expired VA harus berformat YYYY-MM-DD atau YYYY-MM-DD HH:MM.',
+                    'expired_at.after' => 'Tanggal expired VA harus di masa mendatang.',
+                ]);
+
+                if (count($emails) > 2) {
+                    $errors[] = "Baris {$rowNumber}: kolom email hanya boleh berisi maksimal 2 alamat email.";
+                }
+
+                if ($validator->fails()) {
+                    foreach ($validator->errors()->all() as $message) {
+                        $errors[] = "Baris {$rowNumber}: {$message}";
+                    }
+
+                    continue;
+                }
+
+                $rows[] = $row;
+            }
+
+            if ($rows === [] && $errors === []) {
+                $errors[] = 'File CSV tidak memiliki data siswa.';
+            }
+
+            if ($errors !== []) {
+                throw ValidationException::withMessages(['student_file' => $errors]);
+            }
+
+            return $rows;
+        } finally {
+            fclose($stream);
+        }
+    }
+
+    /**
+     * @param  array<int, array{row: int, nis: string, name: string, grade_class: ?string, parent_email: string, additional_email: ?string, expired_at: string}>  $rows
+     */
+    private function validateFixedImportRows(array $rows, Branch $branch, int $bankId): void
+    {
+        $errors = [];
+        $nisRows = [];
+
+        foreach ($rows as $row) {
+            $nisRows[$row['nis']][] = $row['row'];
+        }
+
+        foreach ($nisRows as $nis => $rowNumbers) {
+            if (count($rowNumbers) > 1) {
+                foreach ($rowNumbers as $rowNumber) {
+                    $errors[] = "Baris {$rowNumber}: NIS {$nis} muncul lebih dari sekali di file.";
+                }
+            }
+        }
+
+        $nisList = array_keys($nisRows);
+        $existingNis = $branch->students()->whereIn('nis', $nisList)->pluck('nis')->all();
+
+        foreach ($rows as $row) {
+            if (in_array($row['nis'], $existingNis, true)) {
+                $errors[] = "Baris {$row['row']}: NIS {$row['nis']} sudah terdaftar pada cabang ini.";
+            }
+        }
+
+        $vaNumbers = array_map(fn (string $nis): string => $branch->va_fixed_prefix.$nis, $nisList);
+        $existingVaNumbers = VirtualAccount::query()
+            ->where('bank_id', $bankId)
+            ->whereIn('virtual_account_no', $vaNumbers)
+            ->pluck('virtual_account_no')
+            ->all();
+
+        foreach ($rows as $row) {
+            $vaNumber = $branch->va_fixed_prefix.$row['nis'];
+
+            if (in_array($vaNumber, $existingVaNumbers, true)) {
+                $errors[] = "Baris {$row['row']}: nomor VA {$vaNumber} sudah digunakan pada bank yang dipilih.";
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages(['student_file' => $errors]);
+        }
     }
 
     /**

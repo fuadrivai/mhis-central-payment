@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\AuditLog;
 use App\Models\Bank;
 use App\Models\Branch;
+use App\Models\H2hApiLog;
 use App\Models\User;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -12,6 +13,7 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Arr;
@@ -64,7 +66,7 @@ class RecordAuditActivity
             $failed = true;
         }
 
-        $this->record($request, $response->getStatusCode(), $actor, failed: $failed);
+        $this->record($request, $response->getStatusCode(), $actor, failed: $failed, response: $response);
 
         return $response;
     }
@@ -95,8 +97,13 @@ class RecordAuditActivity
     /**
      * @param  array{type: string, id: int|string|null, name: ?string}  $actor
      */
-    private function record(Request $request, int $status, array $actor, bool $failed = false): void
-    {
+    private function record(
+        Request $request,
+        int $status,
+        array $actor,
+        bool $failed = false,
+        ?Response $response = null,
+    ): void {
         $route = $request->route();
         $routeName = $route?->getName();
         $isRead = in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true);
@@ -119,6 +126,15 @@ class RecordAuditActivity
             }
         }
 
+        $integrationError = $this->invoiceCreationError($request, $status, $response);
+
+        if ($integrationError !== null) {
+            $target = [
+                'type' => 'Invoice',
+                'id' => (string) $integrationError['invoice_id'],
+            ];
+        }
+
         $properties = [
             'outcome' => $this->outcome($request, $event, $status, $failed),
             'input_fields' => $isRead ? [] : $this->safeFieldNames(
@@ -126,6 +142,14 @@ class RecordAuditActivity
             ),
             'query_fields' => $this->safeFieldNames($request->query()),
         ];
+
+        if ($integrationError !== null) {
+            $properties['integration_error'] = [
+                'endpoint' => $integrationError['endpoint'],
+                'response_status' => $integrationError['response_status'],
+                'message' => $integrationError['message'],
+            ];
+        }
 
         try {
             AuditLog::query()->create([
@@ -149,6 +173,80 @@ class RecordAuditActivity
                 'route_name' => $routeName,
             ]);
         }
+    }
+
+    /**
+     * @return array{invoice_id: int, endpoint: string, response_status: ?int, message: ?string}|null
+     */
+    private function invoiceCreationError(Request $request, int $status, ?Response $response): ?array
+    {
+        if (
+            $request->route()?->getName() !== 'api.v1.invoices.store'
+            || $status < Response::HTTP_INTERNAL_SERVER_ERROR
+            || ! $response instanceof JsonResponse
+        ) {
+            return null;
+        }
+
+        $responseData = $response->getData(true);
+        $invoiceId = filter_var($responseData['id'] ?? null, FILTER_VALIDATE_INT);
+
+        if ($invoiceId === false || $invoiceId === null) {
+            return null;
+        }
+
+        $h2hLog = H2hApiLog::query()
+            ->where('invoice_id', $invoiceId)
+            ->where('endpoint', '/api/internal/va/create')
+            ->latest('id')
+            ->first(['endpoint', 'response_status', 'response_payload', 'error_message']);
+
+        if ($h2hLog === null) {
+            return null;
+        }
+
+        return [
+            'invoice_id' => (int) $invoiceId,
+            'endpoint' => $h2hLog->endpoint,
+            'response_status' => $h2hLog->response_status,
+            'message' => $this->safeIntegrationErrorMessage(
+                $h2hLog->error_message,
+                $h2hLog->response_payload ?? [],
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function safeIntegrationErrorMessage(?string $errorMessage, array $payload): ?string
+    {
+        $message = $errorMessage;
+
+        if ($message === null || trim($message) === '') {
+            $error = $payload['error'] ?? null;
+            $message = is_string($error) ? $error : null;
+
+            if (is_array($error)) {
+                $message = $error['message'] ?? $error['description'] ?? null;
+            }
+
+            $message ??= $payload['message'] ?? $payload['error_description'] ?? null;
+        }
+
+        if (! is_string($message) || trim($message) === '') {
+            return null;
+        }
+
+        $message = strip_tags($message);
+        $message = preg_replace('/\bBearer\s+\S+/i', 'Bearer [redacted]', $message) ?? $message;
+        $message = preg_replace(
+            '/\b(api[_ -]?key|authorization|password|secret|token)\b\s*[:=]\s*[^\s,;]+/i',
+            '$1=[redacted]',
+            $message,
+        ) ?? $message;
+
+        return Str::limit(trim($message), 500);
     }
 
     /**

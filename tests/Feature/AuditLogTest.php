@@ -5,10 +5,12 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\Bank;
 use App\Models\Branch;
+use App\Models\Invoice;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class AuditLogTest extends TestCase
@@ -72,6 +74,91 @@ class AuditLogTest extends TestCase
         $this->assertSame($branch->id, $log->actor_id);
         $this->assertSame(422, $log->status);
         $this->assertSame('api.v1.virtual-accounts.fixed.store', $log->route_name);
+    }
+
+    public function test_invoice_creation_h2h_server_error_is_attached_to_audit_log_without_raw_response_fields(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://h2h.test/api/internal/va/create' => Http::response([
+                'message' => 'Temporary backend failure',
+                'api_key' => 'must-not-appear-in-audit',
+            ], 500),
+        ]);
+        config([
+            'services.mandiri_h2h.base_url' => 'https://h2h.test',
+            'services.mandiri_h2h.api_key' => 'test-h2h-key',
+            'services.mandiri_h2h.partner_service_id' => '85765',
+        ]);
+        $admin = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+        $branch = Branch::query()->create([
+            'name' => 'Invoice Audit Branch',
+            'code' => 'IAB',
+            'va_fixed_prefix' => '85765040',
+            'va_dynamic_prefix' => '85765994',
+            'api_key' => 'invoice-audit-branch-key',
+            'is_active' => true,
+        ]);
+
+        $this->postJson(route('api.v1.invoices.store'), [
+            'external_id' => 'AUDIT-INVOICE-001',
+            'amount' => 10000,
+            'payer_email' => 'payer@example.test',
+            'description' => 'Invoice audit test',
+            'invoice_duration' => 3600,
+        ], ['X-API-KEY' => $branch->api_key])
+            ->assertStatus(502);
+
+        $invoice = Invoice::query()->sole();
+        $auditLog = AuditLog::query()->where('route_name', 'api.v1.invoices.store')->sole();
+
+        $this->assertSame($invoice->id, (int) $auditLog->target_id);
+        $this->assertSame('/api/internal/va/create', $auditLog->properties['integration_error']['endpoint']);
+        $this->assertSame(500, $auditLog->properties['integration_error']['response_status']);
+        $this->assertSame(
+            'Temporary backend failure',
+            $auditLog->properties['integration_error']['message'],
+        );
+        $this->assertStringNotContainsString('must-not-appear-in-audit', $auditLog->toJson());
+        $this->assertDatabaseHas('h2h_api_logs', [
+            'invoice_id' => $invoice->id,
+            'response_status' => 500,
+        ]);
+
+        $this->actingAs($admin)->get(route('audit-logs.index'))
+            ->assertOk()
+            ->assertSee('H2H 500')
+            ->assertSee('Temporary backend failure')
+            ->assertSee('audit-log-detail-modal')
+            ->assertSee('data-audit-detail=', false)
+            ->assertDontSee('must-not-appear-in-audit');
+    }
+
+    public function test_audit_log_details_escape_untrusted_error_text_for_the_modal(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+        AuditLog::query()->create([
+            'event' => 'api.request',
+            'actor_type' => 'guest',
+            'method' => 'POST',
+            'route_name' => 'api.v1.invoices.store',
+            'path' => 'api/v1/invoices',
+            'status' => 502,
+            'properties' => [
+                'outcome' => 'failure',
+                'integration_error' => [
+                    'endpoint' => '/api/internal/va/create',
+                    'response_status' => 500,
+                    'message' => '<script>alert("unsafe")</script>',
+                ],
+            ],
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($admin)->get(route('audit-logs.index'))
+            ->assertOk()
+            ->assertSee('&lt;script&gt;', false)
+            ->assertDontSee('<script>alert("unsafe")</script>', false);
     }
 
     public function test_failed_login_attempt_is_logged_without_credentials(): void
@@ -170,5 +257,47 @@ class AuditLogTest extends TestCase
         $this->actingAs($admin)->get(route('audit-logs.index', ['route' => 'home']))
             ->assertOk()
             ->assertSee('home');
+    }
+
+    public function test_audit_log_page_defaults_to_ten_rows_and_accepts_supported_page_lengths(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+
+        foreach (range(1, 30) as $sequence) {
+            AuditLog::query()->create([
+                'event' => 'auth.logout',
+                'actor_type' => 'guest',
+                'method' => 'POST',
+                'path' => 'logout',
+                'status' => 302,
+                'properties' => ['outcome' => 'success'],
+                'created_at' => now()->subSeconds($sequence),
+            ]);
+        }
+
+        $defaultResponse = $this->actingAs($admin)->get(route('audit-logs.index'));
+        $defaultResponse->assertOk()->assertSee('Baris per halaman');
+        $this->assertSame(10, $defaultResponse->viewData('logs')->perPage());
+
+        $selectedResponse = $this->actingAs($admin)->get(route('audit-logs.index', [
+            'per_page' => 25,
+            'route' => 'logout',
+        ]));
+        $selectedResponse->assertOk()
+            ->assertSee('value="25" selected', false)
+            ->assertSee('per_page=25', false)
+            ->assertSee('route=logout', false);
+        $this->assertSame(25, $selectedResponse->viewData('logs')->perPage());
+        $this->assertSame('logout', $selectedResponse->viewData('filters')['route']);
+    }
+
+    public function test_audit_log_page_rejects_unsupported_page_length(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'is_active' => true]);
+
+        $this->actingAs($admin)
+            ->get(route('audit-logs.index', ['per_page' => 15]))
+            ->assertRedirect()
+            ->assertSessionHasErrors('per_page');
     }
 }

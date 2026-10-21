@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\VirtualAccount;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\UploadedFile;
 
 interface VirtualAccountServiceInterface
 {
@@ -23,7 +24,9 @@ interface VirtualAccountServiceInterface
 
     public const OUTCOME_NOT_ELIGIBLE = 'not_eligible';
 
-    public function paginate(?VirtualAccountType $type = null, int $perPage = 15): LengthAwarePaginator;
+    public const OUTCOME_UPDATED = 'updated';
+
+    public function paginate(?VirtualAccountType $type = null, int $perPage = 15, ?string $search = null): LengthAwarePaginator;
 
     public function activeBranches(): Collection;
 
@@ -36,6 +39,23 @@ interface VirtualAccountServiceInterface
      * @return array{outcome: self::OUTCOME_*, virtualAccount: VirtualAccount}
      */
     public function createFixed(array $data): array;
+
+    public function findEditableFixedVirtualAccount(VirtualAccount $virtualAccount): VirtualAccount;
+
+    /**
+     * Update a Fixed VA at the bank before saving the local student and VA details.
+     *
+     * @param  array{name: string, grade_class: ?string, parent_email: string, additional_email: ?string, expired_at: string}  $data
+     * @return self::OUTCOME_*
+     */
+    public function updateFixed(VirtualAccount $virtualAccount, array $data): string;
+
+    /**
+     * Validate and register fixed VAs from a CSV file.
+     *
+     * @return array{created: int, results: array<int, array{row: int, nis: string, outcome: string}>}
+     */
+    public function bulkCreateFixed(int $branchId, int $bankId, UploadedFile $studentFile): array;
 
     /**
      * Void a fixed VA owned by the given branch through its bank.

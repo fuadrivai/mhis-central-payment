@@ -1,9 +1,16 @@
 @extends('template.main')
 
 @section('content')
-    <div class="mb-4">
-        <h4 class="mb-1">Invoices</h4>
-        <p class="text-muted mb-0">Daftar tagihan. Gunakan tombol aksi untuk melihat detail invoice.</p>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">Invoices</h4>
+            <p class="text-muted mb-0">Daftar tagihan. Gunakan tombol aksi untuk melihat detail invoice.</p>
+        </div>
+        @if (auth()->user()->hasPermission('invoices.create'))
+            <a href="{{ route('invoices.create') }}" class="btn btn-primary">
+                <i class="bx bx-plus me-1"></i> Buat Invoice
+            </a>
+        @endif
     </div>
 
     <div class="card mb-4">

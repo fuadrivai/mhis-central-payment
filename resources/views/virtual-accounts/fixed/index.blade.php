@@ -7,13 +7,56 @@
             <p class="text-muted mb-0">VA tetap siswa untuk pembayaran SPP dan Annual Fee.</p>
         </div>
         @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
-            <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary">
-                <i class="bx bx-plus me-1"></i> Buat Fixed VA
-            </a>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ route('virtual-accounts.fixed.bulk.create') }}" class="btn btn-outline-primary">
+                    <i class="bx bx-upload me-1"></i> Bulk Import
+                </a>
+                <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary">
+                    <i class="bx bx-plus me-1"></i> Buat Fixed VA
+                </a>
+            </div>
         @endif
     </div>
 
+    @if (session('bulk_fixed_va_failures'))
+        <div class="alert alert-warning" role="alert">
+            <p class="fw-semibold mb-2">Sebagian baris belum berhasil dibuat:</p>
+            <ul class="mb-0">
+                @foreach (session('bulk_fixed_va_failures') as $failure)
+                    <li>
+                        Baris {{ $failure['row'] }} (NIS {{ $failure['nis'] }}):
+                        @switch($failure['outcome'])
+                            @case(\App\Services\Contracts\VirtualAccountServiceInterface::OUTCOME_UNKNOWN)
+                            @case(\App\Services\Contracts\VirtualAccountServiceInterface::OUTCOME_SERVER_ERROR)
+                                Status H2H belum dapat dipastikan. Verifikasi ke bank sebelum mengimpor ulang.
+                            @break
+                            @default
+                                Ditolak backend H2H. Periksa log integrasi sebelum mencoba kembali.
+                        @endswitch
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="card">
+        <div class="card-body border-bottom">
+            <form method="GET" action="{{ route('virtual-accounts.fixed.index') }}" class="row g-2 align-items-end">
+                <div class="col-md-8 col-lg-9">
+                    <label for="search" class="form-label">Cari Fixed VA</label>
+                    <input id="search" name="search" type="search" value="{{ $search }}"
+                        class="form-control" placeholder="Cari NIS, nama siswa, nomor VA, atau cabang">
+                </div>
+                <div class="col-md-4 col-lg-3 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bx bx-search me-1"></i> Cari
+                    </button>
+                    @if ($search !== '')
+                        <a href="{{ route('virtual-accounts.fixed.index') }}" class="btn btn-outline-secondary">Reset</a>
+                    @endif
+                </div>
+            </form>
+        </div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead>
@@ -26,6 +69,9 @@
                         <th>Nominal</th>
                         <th>Status H2H</th>
                         <th>Kedaluwarsa</th>
+                        @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
+                            <th class="text-center">Aksi</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
@@ -66,12 +112,24 @@
                                 @endswitch
                             </td>
                             <td>{{ $virtualAccount->expired_at?->format('d M Y H:i') ?? '-' }}</td>
+                            @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
+                                <td class="text-center">
+                                    @if ($virtualAccount->status === 'active' && $virtualAccount->student)
+                                        <a href="{{ route('virtual-accounts.fixed.edit', $virtualAccount) }}"
+                                            class="btn btn-sm btn-outline-primary" aria-label="Edit Fixed VA {{ $virtualAccount->virtual_account_no }}">
+                                            <i class="bx bx-edit-alt me-1"></i> Edit
+                                        </a>
+                                    @else
+                                        <span class="text-muted">-</span>
+                                    @endif
+                                </td>
+                            @endif
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center py-5">
+                            <td colspan="{{ auth()->user()->hasPermission('fixed_virtual_accounts.create') ? 9 : 8 }}" class="text-center py-5">
                                 <i class="bx bx-credit-card fs-1 text-muted d-block mb-2"></i>
-                                <p class="text-muted mb-3">Belum ada Fixed VA.</p>
+                                <p class="text-muted mb-3">{{ $search !== '' ? 'Fixed VA tidak ditemukan.' : 'Belum ada Fixed VA.' }}</p>
                                 @if (auth()->user()->hasPermission('fixed_virtual_accounts.create'))
                                     <a href="{{ route('virtual-accounts.fixed.create') }}" class="btn btn-primary btn-sm">
                                         Buat Fixed VA pertama

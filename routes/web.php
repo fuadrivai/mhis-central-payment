@@ -68,6 +68,12 @@ Route::middleware(['auth', 'auth.session', 'active', 'no-cache'])->group(functio
     Route::get('/invoices', [InvoiceController::class, 'index'])
         ->middleware('permission:invoices.view')
         ->name('invoices.index');
+    Route::get('/invoices/create', [InvoiceController::class, 'create'])
+        ->middleware('permission:invoices.create')
+        ->name('invoices.create');
+    Route::post('/invoices', [InvoiceController::class, 'store'])
+        ->middleware('permission:invoices.create')
+        ->name('invoices.store');
     Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])
         ->middleware('permission:invoices.view')
         ->name('invoices.show');
@@ -107,6 +113,21 @@ Route::middleware(['auth', 'auth.session', 'active', 'no-cache'])->group(functio
     Route::post('/virtual-accounts/fixed', [FixedVirtualAccountController::class, 'store'])
         ->middleware('permission:fixed_virtual_accounts.create')
         ->name('virtual-accounts.fixed.store');
+    Route::get('/virtual-accounts/fixed/bulk', [FixedVirtualAccountController::class, 'bulkCreate'])
+        ->middleware('permission:fixed_virtual_accounts.create')
+        ->name('virtual-accounts.fixed.bulk.create');
+    Route::get('/virtual-accounts/fixed/bulk/template', [FixedVirtualAccountController::class, 'bulkTemplate'])
+        ->middleware('permission:fixed_virtual_accounts.create')
+        ->name('virtual-accounts.fixed.bulk.template');
+    Route::post('/virtual-accounts/fixed/bulk', [FixedVirtualAccountController::class, 'bulkStore'])
+        ->middleware('permission:fixed_virtual_accounts.create')
+        ->name('virtual-accounts.fixed.bulk.store');
+    Route::get('/virtual-accounts/fixed/{virtualAccount}/edit', [FixedVirtualAccountController::class, 'edit'])
+        ->middleware('permission:fixed_virtual_accounts.create')
+        ->name('virtual-accounts.fixed.edit');
+    Route::put('/virtual-accounts/fixed/{virtualAccount}', [FixedVirtualAccountController::class, 'update'])
+        ->middleware('permission:fixed_virtual_accounts.create')
+        ->name('virtual-accounts.fixed.update');
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
     Route::get('/audit-logs', [AuditLogController::class, 'index'])
         ->middleware('permission:audit_logs.view')

@@ -180,7 +180,7 @@ class InvoiceService implements InvoiceServiceInterface
             'bill_name' => $data['bill_name'],
             'customer_name' => $data['customer_name'] ?? $student?->name,
             'customer_phone' => $data['customer_phone'] ?? $student?->parent_phone,
-            'email' => $data['email'],
+            'email' => $data['email'] ?? null,
             'amount' => $amount,
             'fee_amount' => $feeAmount,
             'total_amount' => $totalAmount,
